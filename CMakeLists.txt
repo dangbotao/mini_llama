@@ -8,6 +8,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 
 set(MINI_LLAMA_CORE_SOURCES
     src/tensor.cc
+    src/matmul_optimized.cc
 )
 
 option(MINI_LLAMA_BUILD_GTEST "Build optional GoogleTest-based tests" OFF)

@@ -6,10 +6,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
+add_executable(tokenizer_test
+    tests/tokenizer_test.cc
+    src/bpe_tokenizer.cc)
+
 set(MINI_LLAMA_CORE_SOURCES
     src/tensor.cc
     src/matmul_optimized.cc
     src/operations.cc
+    src/bpe_tokenizer.cc
 )
 
 option(MINI_LLAMA_BUILD_GTEST "Build optional GoogleTest-based tests" OFF)

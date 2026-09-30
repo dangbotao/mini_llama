@@ -16,6 +16,7 @@ set(MINI_LLAMA_CORE_SOURCES
     src/operations.cc
     src/bpe_tokenizer.cc
     src/kv_cache.cc
+    src/context.cc
 )
 
 option(MINI_LLAMA_BUILD_GTEST "Build optional GoogleTest-based tests" OFF)

@@ -111,4 +111,63 @@ TEST(ForwardTest, ForwardTokenRunsCompletePath) {
   EXPECT_TRUE(value_written);
 }
 
+TEST(ForwardTest, TwoTokensPreserveAndExtendKvCache) {
+  const MiniLlamaModel model = MakeTestModel();
+  MiniLlamaContext ctx(&model);
+
+  ctx.pos = 0;
+  ForwardToken(ctx, model, 1);
+  const float* key0 = ctx.kv_cache.KeyPtr(0, 0, 0);
+  const float* value0 = ctx.kv_cache.ValuePtr(0, 0, 0);
+  const std::vector<float> saved_key0(key0, key0 + model.config.head_dim);
+  const std::vector<float> saved_value0(value0,
+                                        value0 + model.config.head_dim);
+
+  ctx.pos = 1;
+  ForwardToken(ctx, model, 2);
+
+  key0 = ctx.kv_cache.KeyPtr(0, 0, 0);
+  value0 = ctx.kv_cache.ValuePtr(0, 0, 0);
+  const float* key1 = ctx.kv_cache.KeyPtr(0, 1, 0);
+  const float* value1 = ctx.kv_cache.ValuePtr(0, 1, 0);
+  bool key1_written = false;
+  bool value1_written = false;
+  for (int d = 0; d < model.config.head_dim; ++d) {
+    EXPECT_FLOAT_EQ(key0[d], saved_key0[d]);
+    EXPECT_FLOAT_EQ(value0[d], saved_value0[d]);
+    key1_written |= std::abs(key1[d]) > 0.0f;
+    value1_written |= std::abs(value1[d]) > 0.0f;
+  }
+  EXPECT_TRUE(key1_written);
+  EXPECT_TRUE(value1_written);
+}
+
+TEST(ForwardTest, RejectsInvalidTokenAndPosition) {
+  const MiniLlamaModel model = MakeTestModel();
+  MiniLlamaContext ctx(&model);
+
+  EXPECT_THROW(ForwardToken(ctx, model, -1), std::out_of_range);
+  EXPECT_THROW(ForwardToken(ctx, model, model.config.vocab_size),
+               std::out_of_range);
+
+  ctx.pos = -1;
+  EXPECT_THROW(ForwardToken(ctx, model, 1), std::out_of_range);
+  ctx.pos = model.config.max_seq_len;
+  EXPECT_THROW(ForwardToken(ctx, model, 1), std::out_of_range);
+}
+
+TEST(ForwardTest, RejectsInvalidModelBeforeWritingKvCache) {
+  MiniLlamaModel model = MakeTestModel();
+  MiniLlamaContext ctx(&model);
+  model.layers[0].wq = Tensor({3, model.config.dim}, 1.0f);
+
+  EXPECT_THROW(ForwardToken(ctx, model, 1), std::runtime_error);
+  for (float value : ctx.kv_cache.keys.data) {
+    EXPECT_FLOAT_EQ(value, 0.0f);
+  }
+  for (float value : ctx.kv_cache.values.data) {
+    EXPECT_FLOAT_EQ(value, 0.0f);
+  }
+}
+
 }  // namespace mini_llama

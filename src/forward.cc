@@ -2,11 +2,102 @@
 #include "mini_llama/context.h"
 #include "mini_llama/operations.h"
 
-#include <stdexcept>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace mini_llama {
+
+static void RequireShape(const Tensor& tensor,
+                         const std::vector<int>& expected,
+                         const std::string& name) {
+  size_t expected_size = 1;
+  for (int dim : expected) {
+    expected_size *= static_cast<size_t>(dim);
+  }
+  if (tensor.shape != expected || tensor.size() != expected_size) {
+    throw std::runtime_error("ForwardToken: invalid shape for " + name);
+  }
+}
+
+// 检查：
+// - 配置参数必须为正数
+// - n_heads 能被 n_kv_heads 整除
+// - head_dim 必须为偶数
+// - RoPE、RMSNorm 参数合法
+// - token 和 position 范围
+// - Context 是否属于当前模型
+// - 模型层数
+// - Embedding、Norm、LM Head 形状
+// - KV Cache 形状
+// - 每层 Q/K/V、Attention、FFN 权重形状
+static void ValidateForwardInputs(const MiniLlamaContext& ctx,
+                                  const MiniLlamaModel& model,
+                                  int token_id) {
+  const ModelConfig& cfg = model.config;
+  if (cfg.vocab_size <= 0 || cfg.dim <= 0 || cfg.hidden_dim <= 0 ||
+      cfg.n_layers <= 0 || cfg.n_heads <= 0 || cfg.n_kv_heads <= 0 ||
+      cfg.head_dim <= 0 || cfg.max_seq_len <= 0) {
+    throw std::runtime_error("ForwardToken: model config must be positive");
+  }
+  if (cfg.n_heads % cfg.n_kv_heads != 0) {
+    throw std::runtime_error(
+        "ForwardToken: n_heads must be divisible by n_kv_heads");
+  }
+  if (cfg.head_dim % 2 != 0) {
+    throw std::runtime_error("ForwardToken: head_dim must be even for RoPE");
+  }
+  if (!std::isfinite(cfg.rope_theta) || cfg.rope_theta <= 0.0f ||
+      !std::isfinite(cfg.rms_norm_eps) || cfg.rms_norm_eps <= 0.0f) {
+    throw std::runtime_error("ForwardToken: invalid RoPE or RMSNorm config");
+  }
+  if (token_id < 0 || token_id >= cfg.vocab_size) {
+    throw std::out_of_range("ForwardToken: token id out of range");
+  }
+  if (ctx.pos < 0 || ctx.pos >= cfg.max_seq_len) {
+    throw std::out_of_range("ForwardToken: position out of range");
+  }
+  if (ctx.model != &model) {
+    throw std::runtime_error("ForwardToken: context belongs to another model");
+  }
+  if (model.layers.size() != static_cast<size_t>(cfg.n_layers)) {
+    throw std::runtime_error("ForwardToken: layer count mismatch");
+  }
+
+  RequireShape(model.token_embedding, {cfg.vocab_size, cfg.dim},
+               "token_embedding");
+  RequireShape(model.final_norm, {cfg.dim}, "final_norm");
+  RequireShape(model.lm_head, {cfg.vocab_size, cfg.dim}, "lm_head");
+  RequireShape(ctx.kv_cache.keys,
+               {cfg.n_layers, cfg.max_seq_len, cfg.n_kv_heads, cfg.head_dim},
+               "kv_cache.keys");
+  RequireShape(ctx.kv_cache.values,
+               {cfg.n_layers, cfg.max_seq_len, cfg.n_kv_heads, cfg.head_dim},
+               "kv_cache.values");
+
+  for (int layer = 0; layer < cfg.n_layers; ++layer) {
+    const LayerWeights& weights = model.layers[layer];
+    const std::string prefix = "layers." + std::to_string(layer) + ".";
+    RequireShape(weights.attention_norm, {cfg.dim},
+                 prefix + "attention_norm");
+    RequireShape(weights.wq, {cfg.n_heads * cfg.head_dim, cfg.dim},
+                 prefix + "wq");
+    RequireShape(weights.wk, {cfg.n_kv_heads * cfg.head_dim, cfg.dim},
+                 prefix + "wk");
+    RequireShape(weights.wv, {cfg.n_kv_heads * cfg.head_dim, cfg.dim},
+                 prefix + "wv");
+    RequireShape(weights.wo, {cfg.dim, cfg.n_heads * cfg.head_dim},
+                 prefix + "wo");
+    RequireShape(weights.ffn_norm, {cfg.dim}, prefix + "ffn_norm");
+    RequireShape(weights.w_gate, {cfg.hidden_dim, cfg.dim},
+                 prefix + "w_gate");
+    RequireShape(weights.w_up, {cfg.hidden_dim, cfg.dim}, prefix + "w_up");
+    RequireShape(weights.w_down, {cfg.dim, cfg.hidden_dim},
+                 prefix + "w_down");
+  }
+}
 
 // Elementwise residual addition: [dim] + [dim] -> [dim].
 static Tensor Add(const Tensor& a, const Tensor& b) {
@@ -146,6 +237,8 @@ static Tensor ForwardLayer(MiniLlamaContext& ctx, const MiniLlamaModel& model,
 //    → LM Head
 //    → logits
 Tensor ForwardToken(MiniLlamaContext& ctx, const MiniLlamaModel& model, int token_id) {
+    ValidateForwardInputs(ctx, model, token_id);
+
     const ModelConfig& cfg = model.config;
     int n_layers = cfg.n_layers;
 

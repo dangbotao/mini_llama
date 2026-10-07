@@ -112,25 +112,6 @@ static Tensor Add(const Tensor& a, const Tensor& b) {
   return out;
 }
 
-// function: token_id -> [dim]
-// input: token_embedding [vocab_size, dim], token_id [0, vocab_size - 1]
-// output: [dim]
-Tensor EmbedToken(const MiniLlamaModel& model, int token_id) {
-    if (token_id >= model.config.vocab_size) {
-        throw std::runtime_error("EmbedToken: token_id exceed vocab_size!");
-    }
-    if (token_id < 0) {
-        throw std::runtime_error("EmbedToken: token_id can not be negative!");
-    }
-    int dim = model.config.dim;
-    Tensor x({dim}, 0.0f);
-    for (int d = 0; d < dim; ++d) {
-        x[d] = model.token_embedding[token_id * dim + d];
-    }
-    return x;
-}
-
-
 // Single layer forward
 //   x: input hidden state [dim]
 //   cur_layer: layer FlatIndex
@@ -217,11 +198,31 @@ static Tensor ForwardLayer(MiniLlamaContext& ctx, const MiniLlamaModel& model,
     return Add(attention_added, ffn_output);
 }
 
+// function: token_id -> [dim]
+// input: token_embedding [vocab_size, dim], token_id [0, vocab_size - 1]
+// output: [dim]
+Tensor EmbedToken(const MiniLlamaModel& model, int token_id) {
+    if (token_id >= model.config.vocab_size) {
+        throw std::runtime_error("EmbedToken: token_id exceed vocab_size!");
+    }
+    if (token_id < 0) {
+        throw std::runtime_error("EmbedToken: token_id can not be negative!");
+    }
+    int dim = model.config.dim;
+    Tensor x({dim}, 0.0f);
+    for (int d = 0; d < dim; ++d) {
+        x[d] = model.token_embedding[token_id * dim + d];
+    }
+    return x;
+}
+
+// ---------------------------------------------------------------------------
+// ForwardToken
+// ---------------------------------------------------------------------------
 // ForwardToken: input one token (token_id)
 //            -> embedding [dim]
 //            -> multi transformer_layer
 //            -> logits, output a tensor [vocab_size]
-
 // Embedding
 // Forward Layer
 //    → RMSNorm
@@ -257,6 +258,32 @@ Tensor ForwardToken(MiniLlamaContext& ctx, const MiniLlamaModel& model, int toke
     Tensor logits = Linear(normed, model.lm_head);
 
     return logits.ReshapeChecked({cfg.vocab_size});
+}
+
+// ---------------------------------------------------------------------------
+// ForwardBatch
+// ---------------------------------------------------------------------------
+// Processes all tokens in the batch sequentially.
+// Returns logits for the *last* token in the batch.
+// This unifies prefill (multi-token) and Decode (single-token) paths.
+// ---------------------------------------------------------------------------
+Tensor ForwardBatch(MiniLlamaContext& ctx, const MiniLlamaModel& model,
+                    const MiniBatch& batch) {
+  if (batch.num_tokens() == 0) {
+    throw std::runtime_error("ForwardBatch: empty batch");
+  }
+  if (batch.tokens.size() != batch.positions.size()) {
+    throw std::runtime_error(
+        "ForwardBatch: tokens and positions size mismatch");
+  }
+
+  Tensor logits;
+  for (int i = 0; i < batch.num_tokens(); ++i) {
+    ctx.pos = batch.positions[i]; // 记录当前位置
+    logits = ForwardToken(ctx, model, batch.tokens[i]); // 对batch里的token依次执行forward
+    ctx.token_history.push_back(batch.tokens[i]);
+  }
+  return logits; // 返回最后一个token对应的logits分数
 }
 
 }

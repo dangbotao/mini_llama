@@ -1,4 +1,4 @@
-#pragma once
+# pragma once
 
 #include "mini_llama/tensor.h"
 
@@ -43,7 +43,9 @@ struct LayerWeights {
 
 struct MiniLlamaModel {
     ModelConfig config;
+    bool loaded = false;
 
+    // weights
     Tensor token_embedding;            // [vocab_size, dim]   token_id -> dim
     std::vector<LayerWeights> layers;
     Tensor final_norm;                 // [dim]

@@ -19,6 +19,8 @@ set(MINI_LLAMA_CORE_SOURCES
     src/context.cc
     src/batch.cc
     src/forward.cc
+    src/loader/loader.cc
+    src/loader/parse_json.cc
 )
 
 option(MINI_LLAMA_BUILD_GTEST "Build optional GoogleTest-based tests" OFF)

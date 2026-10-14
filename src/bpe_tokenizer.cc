@@ -398,7 +398,7 @@ bool BpeTokenizer::Load(const std::string& vocab_path,
 // token_to_id
 // output() : id
 
-std::vector<int> BpeTokenizer::Encode(const std::string& text) {
+std::vector<int> BpeTokenizer::Encode(const std::string& text) const {
     if (text.empty()) {
       return {};
     }
@@ -446,7 +446,8 @@ std::vector<int> BpeTokenizer::Encode(const std::string& text) {
     return result;
   }
 
-void BpeTokenizer::EncodeNormalSegment(const std::string& segment, std::vector<int>& result) {
+void BpeTokenizer::EncodeNormalSegment(
+    const std::string& segment, std::vector<int>& result) const {
   // --------------- process normal token --------------
   // b2u_: text[i] (byte:0-255) -> utf8
   std::vector<std::string> word;
@@ -486,7 +487,11 @@ void BpeTokenizer::EncodeNormalSegment(const std::string& segment, std::vector<i
   }
 }
 
-std::string BpeTokenizer::Decode(const std::vector<int>& token_ids) {
+std::string BpeTokenizer::DecodeToken(int token) const {
+    return Decode({token});
+}
+
+std::string BpeTokenizer::Decode(const std::vector<int>& token_ids) const {
     // {7, 20, 100} → "hello" + "Ġ" + "ä¸Ń" → "helloĠä¸Ń"
     // "helloĠä¸Ń" divide to "h" "e" "l" "l" "o" "Ġ" "ä" "¸" "Ń"
     // u2b_

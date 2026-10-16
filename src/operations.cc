@@ -160,4 +160,18 @@ void Rope(Tensor& q, Tensor& k, int pos, float theta, RopeType type) {
     }
 }
 
+int ArgMax(const Tensor& x) {
+  if (x.size() == 0) {
+    throw std::runtime_error("ArgMax: cannot compute ArgMax of empty tensor");
+  }
+  int best = 0;
+  float best_val = x.data[0];
+  for (size_t i = 1; i < x.data.size(); ++i) {
+    if (x.data[i] > best_val) {
+      best_val = x.data[i];
+      best = static_cast<int>(i);
+    }
+  }
+  return best;
+}
 }

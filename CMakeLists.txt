@@ -19,6 +19,7 @@ set(MINI_LLAMA_CORE_SOURCES
     src/context.cc
     src/batch.cc
     src/forward.cc
+    src/sampler.cc
     src/json_vocab_tokenizer.cc
     src/loader/loader.cc
     src/loader/parse_json.cc

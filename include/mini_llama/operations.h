@@ -16,8 +16,11 @@ Tensor Matmul(const Tensor& a, const Tensor& b);
 // result keeps x rank: [out_features] or [1, out_features]
 Tensor Linear(const Tensor& x, const Tensor& weight);
 
-// Softmax over a 1D tensor
-// x: [n], result: [n]
+// Softmax over a 1D tensor.
+// Formula: y_i = exp(x_i) / sum_j(exp(x_j)).
+// For numerical stability, the implementation uses: 防止溢出
+// y_i = exp(x_i - max(x)) / sum_j(exp(x_j - max(x))).
+// x: [n], result: [n], and sum_i(y_i) = 1.
 Tensor SoftMax(const Tensor& x);
 
 // RMSNorm: y = x / sqrt(mean(x^2) + eps) * weight
@@ -31,4 +34,7 @@ Tensor SwiGLU(const Tensor& gate, const Tensor& up);
 Tensor Silu(const Tensor& x);
 
 void Rope(Tensor& q, Tensor& k, int pos, float theta, RopeType type);
+
+// Argmax: return FlatIndex of maximum value
+int ArgMax(const Tensor& x);
 }  // namespace mini_llama

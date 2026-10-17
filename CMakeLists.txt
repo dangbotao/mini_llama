@@ -21,6 +21,8 @@ set(MINI_LLAMA_CORE_SOURCES
     src/forward.cc
     src/sampler.cc
     src/json_vocab_tokenizer.cc
+    src/chat.cc
+    src/prompt_builder.cc
     src/loader/loader.cc
     src/loader/parse_json.cc
 )

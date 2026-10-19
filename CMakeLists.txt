@@ -23,8 +23,14 @@ set(MINI_LLAMA_CORE_SOURCES
     src/json_vocab_tokenizer.cc
     src/chat.cc
     src/prompt_builder.cc
+    src/terminal.cc
     src/loader/loader.cc
     src/loader/parse_json.cc
+)
+
+add_executable(mini-llama
+    src/main.cc
+    ${MINI_LLAMA_CORE_SOURCES}
 )
 
 option(MINI_LLAMA_BUILD_GTEST "Build optional GoogleTest-based tests" OFF)

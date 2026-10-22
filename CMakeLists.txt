@@ -24,6 +24,7 @@ set(MINI_LLAMA_CORE_SOURCES
     src/chat.cc
     src/prompt_builder.cc
     src/terminal.cc
+    src/gguf.cc
     src/loader/loader.cc
     src/loader/parse_json.cc
 )

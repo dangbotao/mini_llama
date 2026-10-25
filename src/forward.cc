@@ -22,6 +22,27 @@ static void RequireShape(const Tensor& tensor,
   }
 }
 
+static void RequireShape(const QuantizedTensor& tensor,
+                         const std::vector<int>& expected,
+                         const std::string& name) {
+  size_t expected_size = 1;
+  for (int dim : expected) {
+    expected_size *= static_cast<size_t>(dim);
+  }
+  if (tensor.shape != expected || tensor.num_elements() != expected_size) {
+    throw std::runtime_error("ForwardToken: invalid shape for " + name);
+  }
+}
+
+static void RequireOptionalShape(const Tensor& tensor,
+                                 const std::vector<int>& expected,
+                                 const std::string& name) {
+  if (tensor.data.empty()) {
+    return;
+  }
+  RequireShape(tensor, expected, name);
+}
+
 // 检查：
 // - 配置参数必须为正数
 // - n_heads 能被 n_kv_heads 整除
@@ -88,6 +109,12 @@ static void ValidateForwardInputs(const MiniLlamaContext& ctx,
                  prefix + "wk");
     RequireShape(weights.wv, {cfg.n_kv_heads * cfg.head_dim, cfg.dim},
                  prefix + "wv");
+    RequireOptionalShape(weights.bq, {cfg.n_heads * cfg.head_dim},
+                         prefix + "bq");
+    RequireOptionalShape(weights.bk, {cfg.n_kv_heads * cfg.head_dim},
+                         prefix + "bk");
+    RequireOptionalShape(weights.bv, {cfg.n_kv_heads * cfg.head_dim},
+                         prefix + "bv");
     RequireShape(weights.wo, {cfg.dim, cfg.n_heads * cfg.head_dim},
                  prefix + "wo");
     RequireShape(weights.ffn_norm, {cfg.dim}, prefix + "ffn_norm");
@@ -110,6 +137,19 @@ static Tensor Add(const Tensor& a, const Tensor& b) {
     out.data[i] = a.data[i] + b.data[i];
   }
   return out;
+}
+
+static void AddOptionalBias(Tensor& value, const Tensor& bias,
+                            const std::string& name) {
+  if (bias.data.empty()) {
+    return;
+  }
+  if (value.shape != bias.shape) {
+    throw std::runtime_error(name + ": shape mismatch");
+  }
+  for (size_t i = 0; i < value.size(); ++i) {
+    value.data[i] += bias.data[i];
+  }
 }
 
 // Single layer forward
@@ -138,6 +178,9 @@ static Tensor ForwardLayer(MiniLlamaContext& ctx, const MiniLlamaModel& model,
     q_flat = Linear(normed, lw.wq); // x [in_dim] * wq [out_dim, in_dim] -> q_flat [out_dim]
     k_flat = Linear(normed, lw.wk);
     v_flat = Linear(normed, lw.wv);
+    AddOptionalBias(q_flat, lw.bq, "attention q bias");
+    AddOptionalBias(k_flat, lw.bk, "attention k bias");
+    AddOptionalBias(v_flat, lw.bv, "attention v bias");
 
     // reshape to multiheads  [head_num, head_dim]
     Tensor q = q_flat.ReshapeChecked({n_heads, head_dim}); // normally n_heads > n_kv_heads

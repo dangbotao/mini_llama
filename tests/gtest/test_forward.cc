@@ -51,19 +51,20 @@ MiniLlamaModel MakeTestModel() {
 
   LayerWeights layer;
   layer.attention_norm = Tensor({model.config.dim}, 1.0f);
-  layer.wq = MakeIdentity(model.config.dim);
-  layer.wk = MakeIdentity(model.config.dim);
-  layer.wv = MakeIdentity(model.config.dim);
-  layer.wo = MakeIdentity(model.config.dim);
+  layer.wq = ToQuantizedTensor(MakeIdentity(model.config.dim));
+  layer.wk = ToQuantizedTensor(MakeIdentity(model.config.dim));
+  layer.wv = ToQuantizedTensor(MakeIdentity(model.config.dim));
+  layer.wo = ToQuantizedTensor(MakeIdentity(model.config.dim));
   layer.ffn_norm = Tensor({model.config.dim}, 1.0f);
-  layer.w_gate = MakeIdentity(model.config.hidden_dim);
-  layer.w_up = MakeIdentity(model.config.hidden_dim);
-  layer.w_down = MakeIdentity(model.config.dim);
+  layer.w_gate = ToQuantizedTensor(MakeIdentity(model.config.hidden_dim));
+  layer.w_up = ToQuantizedTensor(MakeIdentity(model.config.hidden_dim));
+  layer.w_down = ToQuantizedTensor(MakeIdentity(model.config.dim));
   model.layers.push_back(layer);
 
   model.final_norm = Tensor({model.config.dim}, 1.0f);
-  model.lm_head = Tensor({model.config.vocab_size, model.config.dim});
-  model.lm_head.data = embeddings;
+  Tensor lm_head({model.config.vocab_size, model.config.dim});
+  lm_head.data = embeddings;
+  model.lm_head = ToQuantizedTensor(lm_head);
   return model;
 }
 
@@ -109,6 +110,36 @@ TEST(ForwardTest, ForwardTokenRunsCompletePath) {
   }
   EXPECT_TRUE(key_written);
   EXPECT_TRUE(value_written);
+}
+
+TEST(ForwardTest, AppliesOptionalQkvBiases) {
+  const MiniLlamaModel baseline_model = MakeTestModel();
+  MiniLlamaContext baseline_ctx(&baseline_model);
+  const Tensor baseline_logits = ForwardToken(baseline_ctx, baseline_model, 1);
+
+  MiniLlamaModel biased_model = MakeTestModel();
+  biased_model.layers[0].bq = Tensor({4}, 0.1f);
+  biased_model.layers[0].bk = Tensor({4}, 0.2f);
+  biased_model.layers[0].bv = Tensor({4}, 0.3f);
+  MiniLlamaContext biased_ctx(&biased_model);
+  const Tensor biased_logits = ForwardToken(biased_ctx, biased_model, 1);
+
+  const float* baseline_key = baseline_ctx.kv_cache.KeyPtr(0, 0, 0);
+  const float* baseline_value = baseline_ctx.kv_cache.ValuePtr(0, 0, 0);
+  const float* biased_key = biased_ctx.kv_cache.KeyPtr(0, 0, 0);
+  const float* biased_value = biased_ctx.kv_cache.ValuePtr(0, 0, 0);
+  for (int d = 0; d < biased_model.config.head_dim; ++d) {
+    EXPECT_NEAR(biased_key[d], baseline_key[d] + 0.2f, 1e-6f);
+    EXPECT_NEAR(biased_value[d], baseline_value[d] + 0.3f, 1e-6f);
+  }
+
+  ASSERT_EQ(biased_logits.size(), baseline_logits.size());
+  bool logits_changed = false;
+  for (size_t i = 0; i < biased_logits.size(); ++i) {
+    logits_changed |=
+        std::abs(biased_logits[i] - baseline_logits[i]) > 1e-6f;
+  }
+  EXPECT_TRUE(logits_changed);
 }
 
 TEST(ForwardTest, TwoTokensPreserveAndExtendKvCache) {
@@ -159,7 +190,22 @@ TEST(ForwardTest, RejectsInvalidTokenAndPosition) {
 TEST(ForwardTest, RejectsInvalidModelBeforeWritingKvCache) {
   MiniLlamaModel model = MakeTestModel();
   MiniLlamaContext ctx(&model);
-  model.layers[0].wq = Tensor({3, model.config.dim}, 1.0f);
+  model.layers[0].wq =
+      ToQuantizedTensor(Tensor({3, model.config.dim}, 1.0f));
+
+  EXPECT_THROW(ForwardToken(ctx, model, 1), std::runtime_error);
+  for (float value : ctx.kv_cache.keys.data) {
+    EXPECT_FLOAT_EQ(value, 0.0f);
+  }
+  for (float value : ctx.kv_cache.values.data) {
+    EXPECT_FLOAT_EQ(value, 0.0f);
+  }
+}
+
+TEST(ForwardTest, RejectsInvalidQkvBiasShapeBeforeWritingKvCache) {
+  MiniLlamaModel model = MakeTestModel();
+  model.layers[0].bq = Tensor({3}, 1.0f);
+  MiniLlamaContext ctx(&model);
 
   EXPECT_THROW(ForwardToken(ctx, model, 1), std::runtime_error);
   for (float value : ctx.kv_cache.keys.data) {

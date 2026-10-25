@@ -50,19 +50,20 @@ MiniLlamaModel MakeTestModel() {
 
   LayerWeights layer;
   layer.attention_norm = Tensor({model.config.dim}, 1.0f);
-  layer.wq = MakeIdentity(model.config.dim);
-  layer.wk = MakeIdentity(model.config.dim);
-  layer.wv = MakeIdentity(model.config.dim);
-  layer.wo = MakeIdentity(model.config.dim);
+  layer.wq = ToQuantizedTensor(MakeIdentity(model.config.dim));
+  layer.wk = ToQuantizedTensor(MakeIdentity(model.config.dim));
+  layer.wv = ToQuantizedTensor(MakeIdentity(model.config.dim));
+  layer.wo = ToQuantizedTensor(MakeIdentity(model.config.dim));
   layer.ffn_norm = Tensor({model.config.dim}, 1.0f);
-  layer.w_gate = MakeIdentity(model.config.hidden_dim);
-  layer.w_up = MakeIdentity(model.config.hidden_dim);
-  layer.w_down = MakeIdentity(model.config.dim);
+  layer.w_gate = ToQuantizedTensor(MakeIdentity(model.config.hidden_dim));
+  layer.w_up = ToQuantizedTensor(MakeIdentity(model.config.hidden_dim));
+  layer.w_down = ToQuantizedTensor(MakeIdentity(model.config.dim));
   model.layers.push_back(layer);
 
   model.final_norm = Tensor({model.config.dim}, 1.0f);
-  model.lm_head = Tensor({model.config.vocab_size, model.config.dim});
-  model.lm_head.data = embeddings;
+  Tensor lm_head({model.config.vocab_size, model.config.dim});
+  lm_head.data = embeddings;
+  model.lm_head = ToQuantizedTensor(lm_head);
   return model;
 }
 

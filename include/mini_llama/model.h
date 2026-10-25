@@ -1,6 +1,9 @@
 # pragma once
 
+#include <string>
+
 #include "mini_llama/tensor.h"
+#include "mini_llama/quantized_tensor.h"
 
 namespace mini_llama {
 
@@ -29,27 +32,34 @@ struct LayerWeights {
   // weight of rmsnorm at attention beginning
   Tensor attention_norm;   // [dim] F32
 
-  Tensor wq;      // [n_heads * head_dim, dim]  F32/Q8_0/Q4_0
-  Tensor wk;      // [n_kv_heads * head_dim, dim]
-  Tensor wv;      // [n_kv_heads * head_dim, dim]
-  Tensor wo;      // [dim, n_heads * head_dim]
+  // QuantizedTensor Q8     Tensor F32
+  QuantizedTensor wq;      // [n_heads * head_dim, dim]  F32/Q8_0/Q4_0
+  QuantizedTensor wk;      // [n_kv_heads * head_dim, dim]
+  QuantizedTensor wv;      // [n_kv_heads * head_dim, dim]
+
+  Tensor bq;
+  Tensor bk;
+  Tensor bv;
+
+  QuantizedTensor wo;      // [dim, n_heads * head_dim]
 
   Tensor ffn_norm;         // [dim] F32
 
-  Tensor w_gate;  // [hidden_dim, dim]
-  Tensor w_up;    // [hidden_dim, dim]
-  Tensor w_down;  // [dim, hidden_dim]
+  QuantizedTensor w_gate;  // [hidden_dim, dim]
+  QuantizedTensor w_up;    // [hidden_dim, dim]
+  QuantizedTensor w_down;  // [dim, hidden_dim]
 };
 
 struct MiniLlamaModel {
     ModelConfig config;
     bool loaded = false;
+    std::string load_error = "";
 
     // weights
     Tensor token_embedding;            // [vocab_size, dim]   token_id -> dim
     std::vector<LayerWeights> layers;
     Tensor final_norm;                 // [dim]
-    Tensor lm_head;                    // [vocab_size, dim]
+    QuantizedTensor lm_head;                    // [vocab_size, dim]
 };
 
 }  // namespace mini_llama

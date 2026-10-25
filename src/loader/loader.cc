@@ -300,19 +300,27 @@ MiniLlamaModel LoadModel(const ModelManifest& manifest,
             const std::string prefix = "layers." + std::to_string(layer) + ".";
 
             lw.attention_norm = LoadTensorByName(wf, weights_map, prefix + "attention_norm");
-            lw.wq = LoadTensorByName(wf, weights_map, prefix + "wq");
-            lw.wk = LoadTensorByName(wf, weights_map, prefix + "wk");
-            lw.wv = LoadTensorByName(wf, weights_map, prefix + "wv");
-            lw.wo = LoadTensorByName(wf, weights_map, prefix + "wo");
+            lw.wq = ToQuantizedTensor(
+                LoadTensorByName(wf, weights_map, prefix + "wq"));
+            lw.wk = ToQuantizedTensor(
+                LoadTensorByName(wf, weights_map, prefix + "wk"));
+            lw.wv = ToQuantizedTensor(
+                LoadTensorByName(wf, weights_map, prefix + "wv"));
+            lw.wo = ToQuantizedTensor(
+                LoadTensorByName(wf, weights_map, prefix + "wo"));
             lw.ffn_norm = LoadTensorByName(wf, weights_map, prefix + "ffn_norm");
-            lw.w_gate = LoadTensorByName(wf, weights_map, prefix + "w_gate");
-            lw.w_up = LoadTensorByName(wf, weights_map, prefix + "w_up");
-            lw.w_down = LoadTensorByName(wf, weights_map, prefix + "w_down");
+            lw.w_gate = ToQuantizedTensor(
+                LoadTensorByName(wf, weights_map, prefix + "w_gate"));
+            lw.w_up = ToQuantizedTensor(
+                LoadTensorByName(wf, weights_map, prefix + "w_up"));
+            lw.w_down = ToQuantizedTensor(
+                LoadTensorByName(wf, weights_map, prefix + "w_down"));
         }
 
         // After transformer layers
         model.final_norm = LoadTensorByName(wf, weights_map, "final_norm");
-        model.lm_head = LoadTensorByName(wf, weights_map, "lm_head");
+        model.lm_head = ToQuantizedTensor(
+            LoadTensorByName(wf, weights_map, "lm_head"));
         // --------------------------------------------------------------------------
     } catch (const std::exception& e) {
         return LoadFailure(e.what());

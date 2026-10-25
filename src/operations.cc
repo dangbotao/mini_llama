@@ -1,7 +1,9 @@
-#include "mini_llama/operations.h"
 #include <stdexcept>
 #include <algorithm>
 #include <cmath>
+
+#include "mini_llama/operations.h"
+#include "mini_llama/quant.h"
 
 namespace mini_llama {
 
@@ -11,6 +13,19 @@ Tensor Matmul(const Tensor& a, const Tensor& b) {
 
 Tensor Linear(const Tensor& x, const Tensor& weight) {
     return LinearDispatch(x, weight, DefaultMatmulMode());
+}
+
+// ---------------------------------------------------------------------------
+// Quantized Linear dispatch
+// ---------------------------------------------------------------------------
+Tensor Linear(const Tensor& x, const QuantizedTensor& weight) {
+    switch (weight.type) {
+        case QuantType::kF32:
+            return Linear(x, ToTensor(weight));
+        case QuantType::kQ80:
+            return LinearQ80(x, weight.q8_0_data, weight.shape);
+    }
+    throw std::runtime_error("Linear: unknown quant type");
 }
 
 Tensor SoftMax(const Tensor& x) {

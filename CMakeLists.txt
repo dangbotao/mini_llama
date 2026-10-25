@@ -12,6 +12,8 @@ add_executable(tokenizer_test
 
 set(MINI_LLAMA_CORE_SOURCES
     src/tensor.cc
+    src/quantized_tensor.cc
+    src/quant.cc
     src/matmul_optimized.cc
     src/operations.cc
     src/bpe_tokenizer.cc

@@ -96,7 +96,7 @@ public:
   bool GetMetadataIntArray(const std::string& key,
                            std::vector<int32_t>& out) const;
 
-  // 读取 tensor 数据区中的原始字节（uint8_t - 原始字节）
+  // 读取 tensor 数据区中的原始字节（uint8_t）
   bool ReadTensorRaw(const GgufTensorInfo& info,
                      std::vector<uint8_t>& out) const;
 

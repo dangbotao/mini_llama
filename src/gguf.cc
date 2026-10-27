@@ -426,7 +426,7 @@ bool TensorNumel(const GgufTensorInfo& tensor, uint64_t& out) {
   return true;
 }
 
-// 安全计算 GGUF 张量实际占用的字节数
+// 安全计算 GGUF 张量实际占用的全部字节数
 // F32 和 F16 每个元素分别占 4 字节和 2 字节，
 // Q4_0、Q4_1、Q8_0 量化类型则要求元素数能被量化块大小32整除，
 // 并按每块 18、20、34 字节计算

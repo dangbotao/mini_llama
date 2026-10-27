@@ -27,6 +27,7 @@ set(MINI_LLAMA_CORE_SOURCES
     src/prompt_builder.cc
     src/terminal.cc
     src/gguf.cc
+    src/gguf_loader.cc
     src/loader/loader.cc
     src/loader/parse_json.cc
 )

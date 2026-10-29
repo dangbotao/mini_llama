@@ -28,6 +28,7 @@ set(MINI_LLAMA_CORE_SOURCES
     src/terminal.cc
     src/gguf.cc
     src/gguf_loader.cc
+    src/gguf_tokenizer.cc
     src/loader/loader.cc
     src/loader/parse_json.cc
 )

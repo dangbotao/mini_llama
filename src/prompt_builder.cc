@@ -1,76 +1,129 @@
-  #include "mini_llama/prompt_builder.h"
+#include "mini_llama/prompt_builder.h"
 
+#include <stdexcept>
+#include <string>
+#include <vector>
 
-  namespace mini_llama {
+namespace mini_llama {
+namespace {
 
-  void PromptBuilder::SetChatTemplate(const std::string& template_str) {
-    chat_template_ = template_str;
+enum class TemplateKind {
+  kQwen2,
+};
+
+struct TemplateProgram {
+  TemplateKind kind;
+};
+
+std::string RenderQwen2(const std::vector<ChatMessage>& messages,
+                        bool add_generation_prompt) {
+  std::string prompt;
+  const bool has_system =
+      !messages.empty() && messages.front().role == "system";
+
+  if (!has_system) {
+    prompt +=
+        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n";
   }
 
-  // Build prompt from messages.
-  std::string PromptBuilder::Build(const std::vector<ChatMessage>& messages) const {
-    // chat_template_ 为空, tiny模型走这个分支
-    if (chat_template_.empty()) {
-        return BuildPlain(messages);
+  for (const ChatMessage& message : messages) {
+    if (message.role != "system" && message.role != "user" &&
+        message.role != "assistant") {
+      continue;
     }
+    prompt += "<|im_start|>" + message.role + "\n" + message.content +
+              "<|im_end|>\n";
+  }
 
-    // Jinja 模板解析- chat_template_ 以 {% 或 {{ 开头
-    // 当前 Qwen2 GGUF 自带完整 Jinja 模板，因此实际走这里
-    // If the template string starts with {%, it's a full Jinja2 template.
-    // Otherwise it's a shorthand like "qwen2" for built-in templates.
-    // if (chat_template_.size() >= 2 && chat_template_[0] == '{' &&
-    //     (chat_template_[1] == '%' || chat_template_[1] == '{')) {
-    //     auto instrs = CompileTemplate(chat_template_);
-    //     return ExecuteTemplate(instrs, messages, true);
-    // }
-
-    // "qwen2"
-    if (chat_template_ == "qwen2") {
-        return BuildQwen2(messages);
-    }
-
-    return BuildPlain(messages);
-}
-
-// for tiny model test
-std::string PromptBuilder::BuildPlain(const std::vector<ChatMessage>& messages) const {
-    std::string prompt;
-    for (const auto& msg : messages) {
-        if (msg.role == "system") {
-        prompt += "System: " + msg.content + "\n";
-        } else if (msg.role == "user") {
-        prompt += "User: " + msg.content + "\n";
-        } else if (msg.role == "assistant") {
-        prompt += "Assistant: " + msg.content + "\n";
-        }
-    }
-    prompt += "Assistant:";
-    return prompt;
-}
-
-// Qwen2 chat template (built-in fallback):
-//   If no system message, inject default system message.
-//   Each message: <|im_start|>{role}\n{content}<|im_end|>\n
-//   Final assistant prompt: <|im_start|>assistant\n
-std::string PromptBuilder::BuildQwen2(const std::vector<ChatMessage>& messages) const {
-    std::string prompt;
-
-    // 检测头部是否有system，若无则补一个默认的
-    bool has_system =
-    !messages.empty() && messages.front().role == "system";
-
-    if (!has_system) {
-        prompt += "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n";
-    }
-
-    for (const auto& msg : messages) {
-        if (msg.role != "system" && msg.role != "user" && msg.role != "assistant") {
-            continue;
-        }
-        prompt += "<|im_start|>" + msg.role + "\n" + msg.content + "<|im_end|>\n";
-    }
+  if (add_generation_prompt) {
     prompt += "<|im_start|>assistant\n";
-    return prompt;
+  }
+  return prompt;
 }
 
+// Compile the Jinja subset used by the bundled Qwen2 GGUF template. A full
+// general-purpose Jinja interpreter is intentionally out of scope; rejecting
+// unknown templates is safer than silently constructing the wrong prompt.
+TemplateProgram CompileTemplate(const std::string& template_text) {
+  const bool iterates_messages =
+      template_text.find("for message in messages") != std::string::npos;
+  const bool reads_role =
+      template_text.find("message['role']") != std::string::npos ||
+      template_text.find("message[\"role\"]") != std::string::npos;
+  const bool reads_content =
+      template_text.find("message['content']") != std::string::npos ||
+      template_text.find("message[\"content\"]") != std::string::npos;
+  const bool has_chatml_tokens =
+      template_text.find("<|im_start|>") != std::string::npos &&
+      template_text.find("<|im_end|>") != std::string::npos;
+  const bool supports_generation_prompt =
+      template_text.find("add_generation_prompt") != std::string::npos;
+
+  if (iterates_messages && reads_role && reads_content && has_chatml_tokens &&
+      supports_generation_prompt) {
+    return {TemplateKind::kQwen2};
+  }
+
+  throw std::runtime_error(
+      "PromptBuilder: unsupported GGUF Jinja chat template");
 }
+
+std::string ExecuteTemplate(const TemplateProgram& program,
+                            const std::vector<ChatMessage>& messages,
+                            bool add_generation_prompt) {
+  switch (program.kind) {
+    case TemplateKind::kQwen2:
+      return RenderQwen2(messages, add_generation_prompt);
+  }
+  throw std::runtime_error("PromptBuilder: unknown compiled template");
+}
+
+}  // namespace
+
+void PromptBuilder::SetChatTemplate(const std::string& template_str) {
+  chat_template_ = template_str;
+}
+
+std::string PromptBuilder::Build(
+    const std::vector<ChatMessage>& messages) const {
+  if (chat_template_.empty()) {
+    return BuildPlain(messages);
+  }
+
+  // GGUF stores full Jinja templates. Compile the supported subset and
+  // execute it with add_generation_prompt=true for chat generation.
+  if (chat_template_.size() >= 2 && chat_template_[0] == '{' &&
+      (chat_template_[1] == '%' || chat_template_[1] == '{')) {
+    const TemplateProgram program = CompileTemplate(chat_template_);
+    return ExecuteTemplate(program, messages, true);
+  }
+
+  if (chat_template_ == "qwen2") {
+    return BuildQwen2(messages);
+  }
+
+  return BuildPlain(messages);
+}
+
+std::string PromptBuilder::BuildPlain(
+    const std::vector<ChatMessage>& messages) const {
+  std::string prompt;
+  for (const ChatMessage& message : messages) {
+    if (message.role == "system") {
+      prompt += "System: " + message.content + "\n";
+    } else if (message.role == "user") {
+      prompt += "User: " + message.content + "\n";
+    } else if (message.role == "assistant") {
+      prompt += "Assistant: " + message.content + "\n";
+    }
+  }
+  prompt += "Assistant:";
+  return prompt;
+}
+
+std::string PromptBuilder::BuildQwen2(
+    const std::vector<ChatMessage>& messages) const {
+  return RenderQwen2(messages, true);
+}
+
+}  // namespace mini_llama

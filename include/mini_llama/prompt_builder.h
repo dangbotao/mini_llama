@@ -10,7 +10,7 @@ namespace mini_llama {
 // Builds a text prompt from a chat message history.
 // Supports two modes:
 //   1. Plain text (default): System:/User:/Assistant: format
-//   2. Chat template: applies a model-specific template (currently Qwen2)
+//   2. Chat template: applies the Qwen2 shorthand or its GGUF Jinja subset
 //
 // The trailing assistant prefix tells the model to start generating.
 class PromptBuilder {

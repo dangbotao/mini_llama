@@ -6,16 +6,18 @@
 #include <string>
 #include <vector>
 
-#include "mini_llama/loader/loader.h"
-#include "mini_llama/model.h"
-#include "mini_llama/tokenizer.h"
-#include "mini_llama/chat.h"
-#include "mini_llama/prompt_builder.h"
-#include "mini_llama/terminal.h"
-#include "mini_llama/sampler.h"
-#include "mini_llama/context.h"
 #include "mini_llama/batch.h"
+#include "mini_llama/chat.h"
+#include "mini_llama/context.h"
 #include "mini_llama/forward.h"
+#include "mini_llama/gguf.h"
+#include "mini_llama/gguf_loader.h"
+#include "mini_llama/gguf_tokenizer.h"
+#include "mini_llama/model.h"
+#include "mini_llama/prompt_builder.h"
+#include "mini_llama/sampler.h"
+#include "mini_llama/terminal.h"
+#include "mini_llama/tokenizer.h"
 
 namespace mini_llama {
 
@@ -25,20 +27,45 @@ struct LoadedModel {
     std::string chat_template;             // 聊天模板
 };
 
-static LoadedModel LoadModelAndTokenizer() {
+static LoadedModel LoadModelAndTokenizer(const std::string& gguf_path) {
   LoadedModel result;
 
-  result.model =
-      LoadModel("models/tiny/model.json", "models/tiny/model.bin");
+  GgufReader reader;
+  if (!reader.Load(gguf_path)) {
+    result.model.load_error = "Failed to read GGUF: " + reader.load_error;
+    return result;
+  }
+
+  GgufModelLoader model_loader(reader);
+  result.model = model_loader.Load();
 
   if (!result.model.loaded) {
     return result;
   }
 
-  result.tokenizer = CreateTokenizer("models/tiny/vocab.json");
+  result.tokenizer = CreateGgufTokenizer(reader);
 
   if (!result.tokenizer) {
     result.model.loaded = false;
+    result.model.load_error = "Failed to load tokenizer from GGUF metadata";
+    return result;
+  }
+
+  if (result.tokenizer->vocab_size() != result.model.config.vocab_size) {
+    result.model.loaded = false;
+    result.model.load_error =
+        "GGUF model/tokenizer vocabulary size mismatch";
+    result.tokenizer.reset();
+    return result;
+  }
+
+  if (!reader.GetMetadataString("tokenizer.chat_template",
+                                result.chat_template)) {
+    std::string architecture;
+    if (reader.GetMetadataString("general.architecture", architecture) &&
+        architecture == "qwen2") {
+      result.chat_template = "qwen2";
+    }
   }
 
   return result;
@@ -59,16 +86,16 @@ static void StreamDecodedText(const ITokenizer& tokenizer,
   streamed_reply = current_reply;
 }
 
-static int RunChat() {
+static int RunChat(const std::string& gguf_path) {
 
     int max_response_each_round = 8;
 
-    const LoadedModel& lm = LoadModelAndTokenizer();
+    const LoadedModel& lm = LoadModelAndTokenizer(gguf_path);
     const MiniLlamaModel& model = lm.model;
     const std::unique_ptr<ITokenizer>& tokenizer = lm.tokenizer;
 
     if (!lm.model.loaded) {
-        std::cerr << "Failed to load model:\n";
+        std::cerr << "Failed to load model: " << lm.model.load_error << "\n";
         return 1;
     }
     if (!lm.tokenizer) {
@@ -195,6 +222,13 @@ static int RunChat() {
 
 }  // namespace mini_llama
 
-int main() {
-    return mini_llama::RunChat();
+int main(int argc, char** argv) {
+    if (argc > 2) {
+      std::cerr << "Usage: " << argv[0] << " [model.gguf]\n";
+      return 1;
+    }
+    const std::string gguf_path =
+        argc == 2 ? argv[1] :
+                    "models/chat/Qwen2-0.5B-Instruct-Q8_0.gguf";
+    return mini_llama::RunChat(gguf_path);
 }

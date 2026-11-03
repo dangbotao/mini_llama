@@ -345,9 +345,10 @@ ModelConfig GgufModelLoader::BuildConfig() const {
 
 void GgufModelLoader::BuildTensorMap() {
   tensor_map_.clear();
-  tensor_map_.reserve(reader_.tensors.size());
+  const std::vector<GgufTensorInfo>& tensors = reader_.GetTensors();
+  tensor_map_.reserve(tensors.size());
 
-  for (const GgufTensorInfo& tensor : reader_.tensors) {
+  for (const GgufTensorInfo& tensor : tensors) {
     const std::string mapped_name = MapTensorName(tensor.name);
     if (mapped_name.empty()) {
       continue;
@@ -433,7 +434,7 @@ MiniLlamaModel GgufModelLoader::Load() {
   MiniLlamaModel model;
   tensor_map_.clear();
 
-  if (reader_.tensors.empty()) {
+  if (reader_.GetTensors().empty()) {
     model.load_error =
         "GGUF reader is not loaded or does not contain any tensors";
     if (!reader_.load_error.empty()) {

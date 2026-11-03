@@ -66,7 +66,7 @@ bool ReadU32(std::ifstream& f, uint32_t& out) { return ReadLe(f, out); }
 bool ReadU64(std::ifstream& f, uint64_t& out) { return ReadLe(f, out); }
 
 // GGUF string
-// [长度前缀，占8字节，值为key占用的字节数][key内容]
+// [长度前缀，占8字节，前缀值为key占用的字节数][key内容]
 // 例如 general.name 的存储是：[uint64_t: 12][12字节: general.name] - 共20字节
 // qwen2.attention.head_count_kv：[uint64_t: 29][29字节: qwen2.attention.head_count_kv] - 共37字节
 bool ReadString(std::ifstream& f, std::string& out) {
@@ -321,12 +321,12 @@ bool ReadValueAsString(std::ifstream& f, uint32_t value_type, std::string& value
             // ├─ 4字节整数
             // ├─ 4字节整数
             // └─ ...
-
         // 对于数组类型，这里跳过数组中真实的数据，只保存一个概述：
         // [len x element_type]
         case kGgufTypeArray: {
             uint32_t elem_type = 0;
             uint64_t len = 0;
+            // Array类型value的格式：[uint32 元素类型][uint64 数量][连续元素数据]
             if (!ReadU32(f, elem_type) || !ReadU64(f, len)) {
                 return false;
             }
@@ -512,7 +512,7 @@ bool GgufReader::ReadHeader(std::ifstream& f) {
 
 // Metadata KV array - key, type, value
 bool GgufReader::ReadMetadata(std::ifstream& f) {
-    metadata.reserve(n_metadata);
+    metadata_.reserve(n_metadata);
     metadata_index_.reserve(n_metadata);
     std::unordered_set<std::string> metadata_keys;
     for (uint64_t i = 0; i < n_metadata; ++i) {
@@ -551,15 +551,15 @@ bool GgufReader::ReadMetadata(std::ifstream& f) {
             load_error = "failed to read metadata value for key: " + kv.key;
             return false;
         }
-        metadata.push_back(std::move(kv));
-        metadata_index_.emplace(metadata.back().key, metadata.size() - 1);
+        metadata_.push_back(std::move(kv));
+        metadata_index_.emplace(metadata_.back().key, metadata_.size() - 1);
     }
     return true;
 }
 
 // Tensor info
 bool GgufReader::ReadTensorInfos(std::ifstream& f) {
-    tensors.reserve(n_tensors);
+    tensors_.reserve(n_tensors);
     for (uint64_t i = 0; i < n_tensors; ++i) {
         GgufTensorInfo info;
 
@@ -607,12 +607,12 @@ bool GgufReader::ReadTensorInfos(std::ifstream& f) {
             load_error = "failed to read tensor offset for: " + info.name;
             return false;
         }
-        tensors.push_back(std::move(info));
+        tensors_.push_back(std::move(info));
     }
 
     // 检查是否存在重名tensor
     std::unordered_set<std::string> names;
-    for (const auto& tensor : tensors) {
+    for (const auto& tensor : tensors_) {
         // names.insert返回 std::pair<iterator, bool>
         if (!names.insert(tensor.name).second) {
         load_error = "duplicate tensor name: " + tensor.name;
@@ -631,7 +631,7 @@ bool GgufReader::ComputeDataOffset(std::ifstream& f) {
     }
     data_offset = static_cast<uint64_t>(current_pos);
 
-    uint64_t alignment = ParseAlignment(metadata);
+    uint64_t alignment = ParseAlignment(metadata_);
     if (alignment == 0) {
         load_error = "invalid general.alignment";
         return false;
@@ -664,10 +664,11 @@ bool GgufReader::ValidateTensorRanges(std::ifstream& f) {
     }
 
     // 检查每个Tensor的权重数据存储范围是否合法（是否超过GGUF文件大小）
-    for (const auto& tensor : tensors) {
+    for (const auto& tensor : tensors_) {
         uint64_t tensor_size = 0;
         if (!TensorDataSize(tensor, tensor_size)) {
-        load_error = "invalid tensor data size for: " + tensor.name;
+        load_error = "invalid tensor data size for: " + tensor.name +
+                     " (ggml type " + std::to_string(tensor.type) + ")";
         return false;
         }
         if (tensor_size == 0) {
@@ -719,9 +720,9 @@ bool GgufReader::Load(const std::string& path) {
     version = 0;
     n_tensors = 0;
     n_metadata = 0;
-    metadata.clear();
+    metadata_.clear();
     metadata_index_.clear();
-    tensors.clear();
+    tensors_.clear();
     data_offset = 0;
     load_error.clear();
     path_.clear();
@@ -747,17 +748,17 @@ bool GgufReader::Load(const std::string& path) {
 const GgufMetadataKv* GgufReader::FindMetadata(
     const std::string& key) const {
     auto it = metadata_index_.find(key);
-    if (it == metadata_index_.end() || it->second >= metadata.size()) {
+    if (it == metadata_index_.end() || it->second >= metadata_.size()) {
         return nullptr;
     }
-    return &metadata[it->second];
+    return &metadata_[it->second];
 }
 
-// 根据 metadata 的 key 快速定位其在 GGUF 文件中的真实值：
-    // 它先通过索引找到对应的 metadata 条目
-    // 然后以二进制方式重新打开 path_ 指向的 GGUF 文件，
-    // 将文件指针移动到 value_offset 指定的数据起点，
-    // 并通过 out_type 返回该值的类型
+// 根据 metadata 的 key 打开 GGUF 文件，并把文件读取位置移动到该 value 的起始位置
+    // 函数首先通过 FindMetadata() 找到对应的元数据描述GgufMetadataKv，
+    // 检查文件路径和 value_offset 是否有效，
+    // 然后以二进制方式打开文件并跳转到 value 的绝对偏移，
+    // 最后将元数据类型写入 out_type
 bool GgufReader::OpenMetadataValue(
     const std::string& key, std::ifstream& file,
     uint32_t& out_type) const {
@@ -1019,19 +1020,19 @@ void InspectGguf(const GgufReader& reader) {
   std::cout << "  n_metadata: " << reader.n_metadata << std::endl;
   std::cout << "  data_offset: " << reader.data_offset << std::endl;
 
-  if (!reader.metadata.empty()) {
+  if (!reader.GetMetadataEntries().empty()) {
     std::cout << std::endl;
     std::cout << "=== Metadata ===" << std::endl;
-    for (const auto& kv : reader.metadata) {
+    for (const auto& kv : reader.GetMetadataEntries()) {
       std::cout << "  " << kv.key << " (" << GgufValueTypeName(kv.type)
                 << "): " << kv.value_str << std::endl;
     }
   }
 
-  if (!reader.tensors.empty()) {
+  if (!reader.GetTensors().empty()) {
     std::cout << std::endl;
     std::cout << "=== Tensors ===" << std::endl;
-    for (const auto& t : reader.tensors) {
+    for (const auto& t : reader.GetTensors()) {
       std::cout << "  " << t.name << std::endl;
       std::cout << "    shape:  [";
       for (size_t i = 0; i < t.shape.size(); ++i) {

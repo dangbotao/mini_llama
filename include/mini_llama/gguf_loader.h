@@ -26,7 +26,7 @@ class GgufModelLoader {
 
   const GgufReader& reader_;
 
-  // 指针指向 reader_.tensors 中的元素。
+  // 指针指向 reader_.GetTensors() 返回的元素。
   // reader_ 是只读引用，因此这些指针在 loader 生命周期内保持有效。
   std::unordered_map<std::string, const GgufTensorInfo*> tensor_map_;
 };

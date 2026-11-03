@@ -110,13 +110,14 @@ TEST(GgufTest, TestGgufMetadata) {
     FAIL() << reader.load_error;
   }
 
-  EXPECT_EQ(reader.metadata.size(), 3);
-  EXPECT_EQ(reader.metadata[0].key, "general.architecture");
-  EXPECT_EQ(reader.metadata[0].value_str, "llama");
-  EXPECT_EQ(reader.metadata[1].key, "general.name");
-  EXPECT_EQ(reader.metadata[1].value_str, "tiny-test");
-  EXPECT_EQ(reader.metadata[2].key, "general.alignment");
-  EXPECT_EQ(reader.metadata[2].value_str, "64");
+  const auto& metadata = reader.GetMetadataEntries();
+  EXPECT_EQ(metadata.size(), 3);
+  EXPECT_EQ(metadata[0].key, "general.architecture");
+  EXPECT_EQ(metadata[0].value_str, "llama");
+  EXPECT_EQ(metadata[1].key, "general.name");
+  EXPECT_EQ(metadata[1].value_str, "tiny-test");
+  EXPECT_EQ(metadata[2].key, "general.alignment");
+  EXPECT_EQ(metadata[2].value_str, "64");
 }
 
 // 验证 tensor 描述信息能否正确解析tensor
@@ -126,13 +127,14 @@ TEST(GgufTest, TestGgufTensorInfo) {
     FAIL() << reader.load_error;
   }
 
-  EXPECT_EQ(reader.tensors.size(), 1);
-  EXPECT_EQ(reader.tensors[0].name, "token_embd.weight");
-  EXPECT_EQ(reader.tensors[0].shape.size(), 2);
-  EXPECT_EQ(reader.tensors[0].shape[0], 128);
-  EXPECT_EQ(reader.tensors[0].shape[1], 32);
-  EXPECT_EQ(reader.tensors[0].type, kGgmlTypeF32);
-  EXPECT_EQ(reader.tensors[0].offset, 0);
+  const auto& tensors = reader.GetTensors();
+  EXPECT_EQ(tensors.size(), 1);
+  EXPECT_EQ(tensors[0].name, "token_embd.weight");
+  EXPECT_EQ(tensors[0].shape.size(), 2);
+  EXPECT_EQ(tensors[0].shape[0], 128);
+  EXPECT_EQ(tensors[0].shape[1], 32);
+  EXPECT_EQ(tensors[0].type, kGgmlTypeF32);
+  EXPECT_EQ(tensors[0].offset, 0);
 }
 
 // 验证 value_offset 是否真的指向 metadata value 的起始位置
@@ -143,7 +145,7 @@ TEST(GgufTest, TestGgufMetadataIndex) {
   }
 
   // 验证metadata通过key快速索引GgufMetadataKv
-  for (const auto& kv : reader.metadata) {
+  for (const auto& kv : reader.GetMetadataEntries()) {
     const GgufMetadataKv* found = reader.FindMetadata(kv.key);
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found, &kv);
@@ -262,13 +264,14 @@ TEST(GgufTest, TestTensorDataSizeSupportsQuantizedTypes) {
 TEST(GgufTest, TestReadTensorRaw) {
   GgufReader reader;
   ASSERT_TRUE(reader.Load("models/tiny/test.gguf")) << reader.load_error;
-  ASSERT_EQ(reader.tensors.size(), 1);
+  const auto& tensors = reader.GetTensors();
+  ASSERT_EQ(tensors.size(), 1);
   uint64_t size = 0;
-  ASSERT_TRUE(GgufReader::TensorDataSize(reader.tensors[0], size));
+  ASSERT_TRUE(GgufReader::TensorDataSize(tensors[0], size));
   EXPECT_EQ(size, 128 * 32 * sizeof(float));
 
   std::vector<uint8_t> bytes;
-  EXPECT_TRUE(reader.ReadTensorRaw(reader.tensors[0], bytes));
+  EXPECT_TRUE(reader.ReadTensorRaw(tensors[0], bytes));
   EXPECT_EQ(bytes.size(), 128U * 32U * sizeof(float));
 }
 
@@ -286,7 +289,7 @@ TEST(GgufTest, TestBundledQ80ModelParsesWhenAvailable) {
   EXPECT_EQ(reader.n_tensors, 290);
 
   std::size_t q80_count = 0;
-  for (const auto& tensor : reader.tensors) {
+  for (const auto& tensor : reader.GetTensors()) {
     if (tensor.type == kGgmlTypeQ80) {
       ++q80_count;
     }

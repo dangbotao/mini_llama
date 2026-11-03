@@ -75,9 +75,6 @@ public:
   uint64_t n_tensors = 0;
   uint64_t n_metadata = 0;
 
-  std::vector<GgufMetadataKv> metadata;
-  std::vector<GgufTensorInfo> tensors;
-
   // 真实数据起始位置
   uint64_t data_offset = 0;  // absolute file offset where tensor data begins
 
@@ -86,6 +83,14 @@ public:
 
   // 通过名称 key 快速查找 metadata；不存在时返回 nullptr。
   const GgufMetadataKv* FindMetadata(const std::string& key) const;
+
+  // 返回解析出的 metadata 描述信息，只允许上层只读访问。
+  const std::vector<GgufMetadataKv>& GetMetadataEntries() const {
+    return metadata_;
+  }
+
+  // 返回解析出的 tensor 描述信息，只允许上层只读访问。
+  const std::vector<GgufTensorInfo>& GetTensors() const { return tensors_; }
 
   // 根据key，直接读取 typed metadata
   bool GetMetadataInt(const std::string& key, int64_t& out) const;
@@ -109,6 +114,8 @@ public:
 private:
   // metadata 名称 -> metadata vector 下标。
   std::unordered_map<std::string, std::size_t> metadata_index_;
+  std::vector<GgufMetadataKv> metadata_;
+  std::vector<GgufTensorInfo> tensors_;
   std::string path_;
 
   bool OpenMetadataValue(const std::string& key, std::ifstream& file,

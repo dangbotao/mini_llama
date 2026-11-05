@@ -32,8 +32,8 @@ struct LayerWeights {
   // weight of rmsnorm at attention beginning
   Tensor attention_norm;   // [dim] F32
 
-  // QuantizedTensor Q8     Tensor F32
-  QuantizedTensor wq;      // [n_heads * head_dim, dim]  F32/Q8_0/Q4_0
+  // Quantized matrix weights supported by the GGUF loader.
+  QuantizedTensor wq;      // [n_heads * head_dim, dim] F32/Q4_0/Q6_K/Q8_0
   QuantizedTensor wk;      // [n_kv_heads * head_dim, dim]
   QuantizedTensor wv;      // [n_kv_heads * head_dim, dim]
 

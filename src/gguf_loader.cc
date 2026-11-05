@@ -109,14 +109,9 @@ static std::vector<int> MapShape(const std::vector<uint64_t>& gguf_shape) {
 }
 
 // ---------------------------------------------------------------------------
-// Load quantized tensor from raw bytes (F32, Q8_0, Q4_0, Q4_1)
+// Load tensor data from raw GGUF bytes without changing its encoding.
 // ---------------------------------------------------------------------------
 
-// gguf中tensor数据存储格式有Q8_0和F32两种
-// std::vector<uint8_t> raw，只是用统一的
-// 逐字节方式把文件内容搬进内存，并没有改变原始编码
-    // GGUF F32 字节 → raw逐字节读取 → memcpy 到 vector<float>
-    // GGUF Q8_0 字节 → raw → memcpy 到 vector<BlockQ80>
 static QuantizedTensor LoadQuantizedTensor(const std::vector<uint8_t>& raw,
                                            const std::vector<int>& shape,
                                            int ggml_type) {
@@ -157,19 +152,40 @@ static QuantizedTensor LoadQuantizedTensor(const std::vector<uint8_t>& raw,
       std::memcpy(q.q8_0_data.data(), raw.data(), expected_bytes);
       break;
     }
-    // case kGgmlTypeQ40: {
-    //   q.type = QuantType::kQ40;
-    //   size_t n_blocks = (num_elements + kQ40BlockSize - 1) / kQ40BlockSize;
-    //   size_t expected_bytes = n_blocks * sizeof(BlockQ40);
-    //   if (raw.size() != expected_bytes) {
-    //     throw std::runtime_error("Q4_0 tensor size mismatch: expected " +
-    //                              std::to_string(expected_bytes) +
-    //                              " bytes, got " + std::to_string(raw.size()));
-    //   }
-    //   q.q4_0_data.resize(n_blocks);
-    //   std::memcpy(q.q4_0_data.data(), raw.data(), expected_bytes);
-    //   break;
-    // }
+    case kGgmlTypeQ40: {
+      q.type = QuantType::kQ40;
+      if (num_elements % kQ40BlockSize != 0) {
+        throw std::runtime_error(
+            "Q4_0 tensor element count must be divisible by 32");
+      }
+      const size_t n_blocks = num_elements / kQ40BlockSize;
+      const size_t expected_bytes = n_blocks * sizeof(BlockQ40);
+      if (raw.size() != expected_bytes) {
+        throw std::runtime_error("Q4_0 tensor size mismatch: expected " +
+                                 std::to_string(expected_bytes) +
+                                 " bytes, got " + std::to_string(raw.size()));
+      }
+      q.q4_0_data.resize(n_blocks);
+      std::memcpy(q.q4_0_data.data(), raw.data(), expected_bytes);
+      break;
+    }
+    case kGgmlTypeQ6K: {
+      q.type = QuantType::kQ6K;
+      if (num_elements % kQ6KBlockSize != 0) {
+        throw std::runtime_error(
+            "Q6_K tensor element count must be divisible by 256");
+      }
+      const size_t n_blocks = num_elements / kQ6KBlockSize;
+      const size_t expected_bytes = n_blocks * sizeof(BlockQ6K);
+      if (raw.size() != expected_bytes) {
+        throw std::runtime_error("Q6_K tensor size mismatch: expected " +
+                                 std::to_string(expected_bytes) +
+                                 " bytes, got " + std::to_string(raw.size()));
+      }
+      q.q6_k_data.resize(n_blocks);
+      std::memcpy(q.q6_k_data.data(), raw.data(), expected_bytes);
+      break;
+    }
     // case kGgmlTypeQ41: {
     //   q.type = QuantType::kQ41;
     //   size_t n_blocks = (num_elements + kQ41BlockSize - 1) / kQ41BlockSize;
@@ -380,6 +396,10 @@ Tensor GgufModelLoader::LoadTensorF32(const std::string& name) const {
   switch (weight.type) {
     case QuantType::kF32:
       return ToTensor(weight);
+    case QuantType::kQ40:
+      return DequantizeFromQ40(weight.q4_0_data, weight.shape);
+    case QuantType::kQ6K:
+      return DequantizeFromQ6K(weight.q6_k_data, weight.shape);
     case QuantType::kQ80:
       return DequantizeFromQ80(weight.q8_0_data, weight.shape);
   }

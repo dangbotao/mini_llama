@@ -56,7 +56,7 @@ void QuantizedTensor::AssertShape(const std::vector<int>& expected,
 Tensor ToTensor(const QuantizedTensor& tensor) {
   if (tensor.type != QuantType::kF32) {
     throw std::runtime_error(
-        "ToTensor: cannot convert Q8_0 without dequantization");
+        "ToTensor: cannot convert quantized data without dequantization");
   }
 
   Tensor result(tensor.shape, 0.0f);

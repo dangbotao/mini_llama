@@ -38,6 +38,7 @@ enum GgmlType : uint32_t {
   kGgmlTypeQ40 = 2,
   kGgmlTypeQ41 = 3,
   kGgmlTypeQ80 = 8,
+  kGgmlTypeQ6K = 14,
 };
 
 // ---------------------------------------------------------------------------

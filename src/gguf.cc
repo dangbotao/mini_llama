@@ -21,7 +21,8 @@ constexpr uint64_t kMaxTensorEntries = 1000000;
 constexpr uint64_t kMaxArrayElements = 10000000;
 constexpr uint32_t kMaxTensorDims = 8;
 
-// Q4_0、Q4_1、Q8_0 三种 GGML 量化格式中，kQuantBlockSize 都固定为 32 个元素
+// Q4_0、Q4_1、Q8_0 三种 GGML 量化格式的块大小均为 32 个元素。
+// Q6_K 使用单独的 256 元素 super-block。
 // 每块大小计算方式为：
     // | 类型 | 每块元素数 | 量化数据 | 辅助参数 | 每块大小 |
     // |---|---:|---:|---:|---:|
@@ -140,6 +141,8 @@ const char* GgmlTypeName(uint32_t type) {
       return "Q4_1";
     case kGgmlTypeQ80:
       return "Q8_0";
+    case kGgmlTypeQ6K:
+      return "Q6_K";
     default:
       return "UNKNOWN";
   }
@@ -461,6 +464,13 @@ bool ComputeTensorDataSize(const GgufTensorInfo& tensor, uint64_t& out) {
       }
       uint64_t n_blocks = num_elements / kQuantBlockSize;
       return MultiplyChecked(n_blocks, 34, out);
+    }
+    case kGgmlTypeQ6K: {
+      if (num_elements % 256 != 0) {
+        return false;
+      }
+      const uint64_t n_blocks = num_elements / 256;
+      return MultiplyChecked(n_blocks, 210, out);
     }
     default:
       out = 0;

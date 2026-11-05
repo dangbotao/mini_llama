@@ -22,6 +22,10 @@ Tensor Linear(const Tensor& x, const QuantizedTensor& weight) {
     switch (weight.type) {
         case QuantType::kF32:
             return Linear(x, ToTensor(weight));
+        case QuantType::kQ40:
+            return LinearQ40(x, weight.q4_0_data, weight.shape);
+        case QuantType::kQ6K:
+            return LinearQ6K(x, weight.q6_k_data, weight.shape);
         case QuantType::kQ80:
             return LinearQ80(x, weight.q8_0_data, weight.shape);
     }

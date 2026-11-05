@@ -18,7 +18,7 @@ Tensor Matmul(const Tensor& a, const Tensor& b);
 Tensor Linear(const Tensor& x, const Tensor& weight);
 
 // Linear projection with quantized weight.
-// Dispatches to the F32 or Q8_0 path based on weight.type.
+// Dispatches to the F32, Q4_0, Q6_K, or Q8_0 path based on weight.type.
 Tensor Linear(const Tensor& x, const QuantizedTensor& weight);
 
 // Softmax over a 1D tensor.

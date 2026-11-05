@@ -228,6 +228,7 @@ TEST(GgufTest, TestTypedMetadataAccess) {
 // Q4_0 ：1 个块 = 18 字节
 // Q4_1 ：1 个块 = 20 字节
 // Q8_0 ：1 个块 = 34 字节
+// Q6_K ：256 个元素 = 210 字节
 TEST(GgufTest, TestTensorDataSizeSupportsQuantizedTypes) {
   GgufTensorInfo info;
   info.shape = {32};
@@ -252,6 +253,11 @@ TEST(GgufTest, TestTensorDataSizeSupportsQuantizedTypes) {
   info.type = kGgmlTypeQ80;
   EXPECT_TRUE(GgufReader::TensorDataSize(info, size));
   EXPECT_EQ(size, 34);
+
+  info.shape = {256};
+  info.type = kGgmlTypeQ6K;
+  EXPECT_TRUE(GgufReader::TensorDataSize(info, size));
+  EXPECT_EQ(size, 210);
 
   info.shape = {33};
   EXPECT_FALSE(GgufReader::TensorDataSize(info, size));
@@ -295,6 +301,29 @@ TEST(GgufTest, TestBundledQ80ModelParsesWhenAvailable) {
     }
   }
   EXPECT_GT(q80_count, 0); // 大于
+}
+
+TEST(GgufTest, TestBundledQ40ModelParsesMixedQuantizationWhenAvailable) {
+  const std::string model_path =
+      "models/chat/Qwen2.5-3B-Instruct-Q4_0.gguf";
+  if (!std::filesystem::exists(model_path)) {
+    GTEST_SKIP() << "bundled Q4_0 model is not available";
+  }
+
+  GgufReader reader;
+  ASSERT_TRUE(reader.Load(model_path)) << reader.load_error;
+
+  std::size_t q40_count = 0;
+  std::size_t q6k_count = 0;
+  for (const auto& tensor : reader.GetTensors()) {
+    if (tensor.type == kGgmlTypeQ40) {
+      ++q40_count;
+    } else if (tensor.type == kGgmlTypeQ6K) {
+      ++q6k_count;
+    }
+  }
+  EXPECT_GT(q40_count, 0U);
+  EXPECT_GT(q6k_count, 0U);
 }
 
 }  // namespace mini_llama

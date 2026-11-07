@@ -57,6 +57,22 @@ TEST(PromptBuilderTest, ExecutesBundledQwen2JinjaTemplate) {
             "<|im_start|>assistant\n");
 }
 
+TEST(PromptBuilderTest, ExecutesQwen25DotSyntaxJinjaTemplate) {
+  const std::string qwen25_template =
+      R"({%- for message in messages %}{{- '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>\n' }}{%- endfor %}{%- if add_generation_prompt %}{{- '<|im_start|>assistant\n' }}{%- endif %}You are Qwen, created by Alibaba Cloud. You are a helpful assistant.)";
+
+  PromptBuilder builder;
+  builder.SetChatTemplate(qwen25_template);
+
+  EXPECT_EQ(builder.Build({{"user", "hello"}}),
+            "<|im_start|>system\n"
+            "You are Qwen, created by Alibaba Cloud. You are a helpful "
+            "assistant.<|im_end|>\n"
+            "<|im_start|>user\n"
+            "hello<|im_end|>\n"
+            "<|im_start|>assistant\n");
+}
+
 TEST(PromptBuilderTest, RejectsUnsupportedJinjaTemplate) {
   PromptBuilder builder;
   builder.SetChatTemplate("{{ unsupported_expression }}");

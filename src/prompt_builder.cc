@@ -9,6 +9,7 @@ namespace {
 
 enum class TemplateKind {
   kQwen2,
+  kQwen25,
 };
 
 struct TemplateProgram {
@@ -16,14 +17,15 @@ struct TemplateProgram {
 };
 
 std::string RenderQwen2(const std::vector<ChatMessage>& messages,
-                        bool add_generation_prompt) {
+                        bool add_generation_prompt,
+                        const std::string& default_system_message) {
   std::string prompt;
   const bool has_system =
       !messages.empty() && messages.front().role == "system";
 
   if (!has_system) {
-    prompt +=
-        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n";
+    prompt += "<|im_start|>system\n" + default_system_message +
+              "<|im_end|>\n";
   }
 
   for (const ChatMessage& message : messages) {
@@ -49,10 +51,12 @@ TemplateProgram CompileTemplate(const std::string& template_text) {
       template_text.find("for message in messages") != std::string::npos;
   const bool reads_role =
       template_text.find("message['role']") != std::string::npos ||
-      template_text.find("message[\"role\"]") != std::string::npos;
+      template_text.find("message[\"role\"]") != std::string::npos ||
+      template_text.find("message.role") != std::string::npos;
   const bool reads_content =
       template_text.find("message['content']") != std::string::npos ||
-      template_text.find("message[\"content\"]") != std::string::npos;
+      template_text.find("message[\"content\"]") != std::string::npos ||
+      template_text.find("message.content") != std::string::npos;
   const bool has_chatml_tokens =
       template_text.find("<|im_start|>") != std::string::npos &&
       template_text.find("<|im_end|>") != std::string::npos;
@@ -61,6 +65,10 @@ TemplateProgram CompileTemplate(const std::string& template_text) {
 
   if (iterates_messages && reads_role && reads_content && has_chatml_tokens &&
       supports_generation_prompt) {
+    if (template_text.find("You are Qwen, created by Alibaba Cloud.") !=
+        std::string::npos) {
+      return {TemplateKind::kQwen25};
+    }
     return {TemplateKind::kQwen2};
   }
 
@@ -73,7 +81,13 @@ std::string ExecuteTemplate(const TemplateProgram& program,
                             bool add_generation_prompt) {
   switch (program.kind) {
     case TemplateKind::kQwen2:
-      return RenderQwen2(messages, add_generation_prompt);
+      return RenderQwen2(messages, add_generation_prompt,
+                         "You are a helpful assistant.");
+    case TemplateKind::kQwen25:
+      return RenderQwen2(
+          messages, add_generation_prompt,
+          "You are Qwen, created by Alibaba Cloud. You are a helpful "
+          "assistant.");
   }
   throw std::runtime_error("PromptBuilder: unknown compiled template");
 }
@@ -123,7 +137,7 @@ std::string PromptBuilder::BuildPlain(
 
 std::string PromptBuilder::BuildQwen2(
     const std::vector<ChatMessage>& messages) const {
-  return RenderQwen2(messages, true);
+  return RenderQwen2(messages, true, "You are a helpful assistant.");
 }
 
 }  // namespace mini_llama

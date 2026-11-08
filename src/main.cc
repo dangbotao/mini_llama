@@ -1,5 +1,8 @@
 
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -90,11 +93,14 @@ static void StreamDecodedText(const ITokenizer& tokenizer,
 static int RunChat(const std::string& gguf_path) {
 
     int max_response_each_round = 128;
+    const bool show_perf = std::getenv("MINI_LLAMA_PERF") != nullptr;
 
-    // Use all available logical CPUs for matrix and quantized linear kernels.
+    // Use all available logical CPUs for quantized and F32 linear kernels.
     SetThreadCount(0);
 
-    const LoadedModel& lm = LoadModelAndTokenizer(gguf_path);
+    const auto load_begin = std::chrono::steady_clock::now();
+    const LoadedModel lm = LoadModelAndTokenizer(gguf_path);
+    const auto load_end = std::chrono::steady_clock::now();
     const MiniLlamaModel& model = lm.model;
     const std::unique_ptr<ITokenizer>& tokenizer = lm.tokenizer;
 
@@ -105,6 +111,13 @@ static int RunChat(const std::string& gguf_path) {
     if (!lm.tokenizer) {
         std::cerr << "Failed to load tokenizer.\n";
         return 1;
+    }
+    if (show_perf) {
+        const double load_ms =
+            std::chrono::duration<double, std::milli>(load_end - load_begin)
+                .count();
+        std::cerr << std::fixed << std::setprecision(2)
+                  << "[perf] load_ms=" << load_ms << "\n";
     }
     // --------- Create PromptBuilder, Terminal and ChatSession ----------------
 
@@ -177,7 +190,10 @@ static int RunChat(const std::string& gguf_path) {
             MiniBatch prefill_batch =
                 MiniBatch::BuildMultiTokensBatch(tokens);
 
+            const int prefill_tokens = static_cast<int>(tokens.size());
+            const auto prefill_begin = std::chrono::steady_clock::now();
             Tensor logits = ForwardBatch(ctx, model, prefill_batch);
+            const auto prefill_end = std::chrono::steady_clock::now();
 
             int max_response_all =
                 model.config.max_seq_len - static_cast<int>(tokens.size());
@@ -188,6 +204,7 @@ static int RunChat(const std::string& gguf_path) {
             std::string streamed_reply;
 
             term.PrintAssistantPrefix();
+            const auto decode_begin = std::chrono::steady_clock::now();
             for (int i = 0; i < response_len; ++i) {
                 int next_token = sampler.Sample(logits);
                 if (next_token == tokenizer->eos_id()) {
@@ -205,6 +222,7 @@ static int RunChat(const std::string& gguf_path) {
 
                 logits = ForwardBatch(ctx, model, decode_batch);
             }
+            const auto decode_end = std::chrono::steady_clock::now();
 
             std::string assistant_reply = tokenizer->Decode(generated_tokens);
             // Commit the turn only after prompt construction, inference and
@@ -212,6 +230,30 @@ static int RunChat(const std::string& gguf_path) {
             session.AddMessage("user", input);
             session.AddMessage("assistant", assistant_reply);
             term.NewLine();
+            if (show_perf) {
+                const double prefill_ms =
+                    std::chrono::duration<double, std::milli>(
+                        prefill_end - prefill_begin)
+                        .count();
+                const double decode_ms =
+                    std::chrono::duration<double, std::milli>(
+                        decode_end - decode_begin)
+                        .count();
+                const double decode_tps =
+                    decode_ms > 0.0
+                        ? generated_tokens.size() * 1000.0 / decode_ms
+                        : 0.0;
+                const double prefill_tps =
+                    prefill_ms > 0.0 ? prefill_tokens * 1000.0 / prefill_ms
+                                     : 0.0;
+                std::cerr << std::fixed << std::setprecision(2)
+                          << "[perf] prefill_tokens=" << prefill_tokens
+                          << " prefill_ms=" << prefill_ms
+                          << " prefill_tps=" << prefill_tps
+                          << " decode_tokens=" << generated_tokens.size()
+                          << " decode_ms=" << decode_ms
+                          << " decode_tps=" << decode_tps << "\n";
+            }
         } catch (const std::exception& e) {
             term.NewLine();
             term.PrintMessage("Inference error: " + std::string(e.what()));

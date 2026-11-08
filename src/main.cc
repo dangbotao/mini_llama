@@ -89,7 +89,7 @@ static void StreamDecodedText(const ITokenizer& tokenizer,
 
 static int RunChat(const std::string& gguf_path) {
 
-    int max_response_each_round = 8;
+    int max_response_each_round = 128;
 
     // Use all available logical CPUs for matrix and quantized linear kernels.
     SetThreadCount(0);

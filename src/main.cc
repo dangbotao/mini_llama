@@ -17,6 +17,7 @@
 #include "mini_llama/prompt_builder.h"
 #include "mini_llama/sampler.h"
 #include "mini_llama/terminal.h"
+#include "mini_llama/thread_pool.h"
 #include "mini_llama/tokenizer.h"
 
 namespace mini_llama {
@@ -89,6 +90,9 @@ static void StreamDecodedText(const ITokenizer& tokenizer,
 static int RunChat(const std::string& gguf_path) {
 
     int max_response_each_round = 8;
+
+    // Use all available logical CPUs for matrix and quantized linear kernels.
+    SetThreadCount(0);
 
     const LoadedModel& lm = LoadModelAndTokenizer(gguf_path);
     const MiniLlamaModel& model = lm.model;

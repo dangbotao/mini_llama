@@ -17,10 +17,11 @@ namespace mini_llama {
 // GPT-2 bytes_to_unicode mapping
 // ---------------------------------------------------------------------------
 
+// 将数值形式的unicode码点，转换成实际的utf-8字节串
 std::string UnicodePointToUtf8(char32_t cp) {
 // static std::string UnicodePointToUtf8(char32_t cp) {
     // 1byte 0xxxxxxx 0~0x7F 7个有效位
-    // 2byte 110xxxxx 10xxxxxx 0x80~0x7FF 11
+    // 2byte 110xxxxx 10xxxxxx 0x80~0x7FF 11个有效位
     // 3byte 1110xxxx 10xxxxxx 10xxxxxx 0x800~0xFFFF
     // 4byte 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx 0x10000~0x10FFFF(10FFFF，unicode最大值)
     if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
@@ -52,7 +53,7 @@ std::vector<std::string> BuildByteToUtf8Table() {
     其中：
     - 0x21～0x7E、0xA1～0xAC、0xAE～0xFF 直接映射到同值 Unicode 码点。
     - 其余 68 个不便直接表示的 byte 依次映射到 U+0100～U+0143。
-    - 最后把 Unicode 码点编码成 UTF-8。*/
+    - 最后把 Unicode 码点编码成 UTF-8字符（string)。*/
 
     // '!' -> '~' 0x21-0x7E
     // 0xA1-0xAC
@@ -398,53 +399,62 @@ bool BpeTokenizer::Load(const std::string& vocab_path,
 // token_to_id
 // output() : id
 
+// 这段代码的作用是把输入文本分成“特殊 token”和“普通文本片段”两类，再分别编码：
+// 1. 如果输入为空，直接返回空的 token ID 数组。
+// 2. 创建 result 保存编码结果，pos 表示当前处理到的字节位置。
+// 3. 在循环中，先遍历 special_tokens_，检查当前位置是否以某个特殊 token 开头。
+// 4. 如果匹配，例如 <|im_start|>，就直接将其 token ID 加入 result，并让 pos 跳过整个特殊 token；它不会参与普通 BPE。
+// 5. 如果当前位置不是特殊 token，就查找当前位置之后最早出现的特殊 token，将它的位置记为 end。
+// 6. 截取 [pos, end) 之间的普通文本，并交给 EncodeNormalSegment() 完成 byte 映射、BPE 合并和词表查询。
+// 7. 将 pos 移动到 end，继续处理后面的特殊 token 或普通文本。
+// 8. 整个文本处理完后，返回 token ID 序列。
 std::vector<int> BpeTokenizer::Encode(const std::string& text) const {
-    if (text.empty()) {
-      return {};
-    }
-
-    std::vector<int> result;
-    int pos = 0;
-
-    while (pos < text.size()) {
-      // ------------ process special token -------------
-      // find first special token
-      bool is_special = false;
-      for (const auto& st : special_tokens_) {
-        // if (pos + st.first.size() <= text.size() &&
-        //     std::memcmp(st.first.data(), text.data() + pos, st.first.size()) == 0) {
-        size_t token_size = st.first.size();
-        if (pos + token_size <= text.size() &&
-            text.compare(pos, token_size, st.first, 0 , token_size) == 0) {
-          is_special = true;
-          pos += token_size;
-          result.push_back(st.second);
-          break;
-        }
-      }
-
-      // check whether next pos is special
-      if (is_special) {
-        continue;
-      }
-
-      // current pos is normal token, find end of normal token
-      std::size_t end = text.size();
-      for (const auto& st : special_tokens_) {
-        std::size_t found = text.find(st.first, pos);
-        if (found != std::string::npos && found < end) {
-          end = found;
-        }
-      }
-
-      // normal segment bpe [pos, end)
-      std::string segment = text.substr(pos, end - pos);
-      EncodeNormalSegment(segment, result);
-
-      pos = end;
-    }
-    return result;
+  if (text.empty()) {
+    return {};
   }
+
+  std::vector<int> result;
+  int pos = 0;
+
+  while (pos < text.size()) {
+    // ------------ process special token -------------
+    // find first special token
+    bool is_special = false;
+    for (const auto& st : special_tokens_) {
+      // if (pos + st.first.size() <= text.size() &&
+      //     std::memcmp(st.first.data(), text.data() + pos, st.first.size()) == 0) {
+      size_t token_size = st.first.size();
+      if (pos + token_size <= text.size() &&
+          text.compare(pos, token_size, st.first, 0 , token_size) == 0) {
+        is_special = true;
+        pos += token_size;
+        result.push_back(st.second);
+        break;
+      }
+    }
+
+    // check whether next pos is special
+    if (is_special) {
+      continue;
+    }
+
+    // current pos is normal token, find end of normal token
+    std::size_t end = text.size();
+    for (const auto& st : special_tokens_) {
+      std::size_t found = text.find(st.first, pos);
+      if (found != std::string::npos && found < end) {
+        end = found;
+      }
+    }
+
+    // normal segment bpe [pos, end)
+    std::string segment = text.substr(pos, end - pos);
+    EncodeNormalSegment(segment, result);
+
+    pos = end;
+  }
+  return result;
+}
 
 void BpeTokenizer::EncodeNormalSegment(
     const std::string& segment, std::vector<int>& result) const {

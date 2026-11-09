@@ -122,6 +122,11 @@ bool GgufTokenizer::Load(const GgufReader& reader) {
   return true;
 }
 
+// input(byte): E4 | B8 | AD
+// b2u_: ä(C3 A4) | ¸(C2 B8) | Ń（C5 83）
+// merge(token): ä¸Ń
+// token_to_id
+// output() : id
 std::vector<int> GgufTokenizer::Encode(const std::string& text) const {
   if (text.empty()) {
     return {};

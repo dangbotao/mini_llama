@@ -81,7 +81,7 @@ std::ifstream file("model.bin", std::ios::binary);
 char buffer[128];
 file.read(buffer, sizeof(buffer));
 
-std::streamsize count = file.gcount();
+std::streamsize count = file.gcount(); // 实际读取的字节数
 ```
 
 文件写入示例：

@@ -54,3 +54,12 @@ cmake -S . -B build-asan \
 cmake --build build-asan -j
 ./build-asan/mini-llama-gtests \
   --gtest_filter=TokenizerTest.TestEncodeChineseCharacter
+
+# 运行 GGUF 模型
+
+模型文件不纳入 Git，请放置在 `models/chat/` 目录下：
+
+```bash
+MINI_LLAMA_PERF=1 ./build/mini-llama \
+  models/chat/Qwen2.5-3B-Instruct-Q4_0.gguf
+```
